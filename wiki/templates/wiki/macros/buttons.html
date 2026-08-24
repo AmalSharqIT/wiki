@@ -24,25 +24,7 @@
                 {{ render_icon("edit", "w-4 h-4") }}
                 <span>{{ edit_text }}</span>
             </a>
-            {% else %}
-            <!-- Contributions off: Copy as Markdown is the primary action -->
-            <button @click="copyMarkdown()" class="{{ split_segment }} px-2.5 cursor-pointer">
-                <template x-if="!copied">
-                    {{ render_icon("clipboard", "w-4 h-4") }}
-                </template>
-                <template x-if="copied">
-                    {{ render_icon("check", "w-4 h-4 text-[var(--ink-green-8)]") }}
-                </template>
-                <span x-text="copied ? 'Copied!' : 'Copy'"></span>
-            </button>
             {% endif %}
-            <!-- Dropdown toggle button -->
-            <button @click="open = !open"
-                    aria-label="More page actions"
-                    :aria-expanded="open"
-                    class="{{ split_segment }} w-8 border-l border-[var(--outline-gray-2)] cursor-pointer">
-                <span class="inline-flex" :class="{ 'rotate-180': open }">{{ render_icon("chevron-down", "transition-transform duration-200") }}</span>
-            </button>
         </div>
 
         {#- Menu surface: frappe-ui Menu content + its p-1.5 group padding. -#}
