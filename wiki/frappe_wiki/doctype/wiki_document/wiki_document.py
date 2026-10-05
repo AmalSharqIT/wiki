@@ -529,7 +529,7 @@ class WikiDocument(NestedSet):
 			{
 				"wiki_space": wiki_space_doc,
 				"can_edit": self._can_show_edit(wiki_space_doc),
-				"wiki_spaces_for_switcher": frappe.get_all(
+				"wiki_spaces_for_switcher": frappe.get_list(
 					"Wiki Space",
 					fields=[
 						"name",
@@ -545,6 +545,7 @@ class WikiDocument(NestedSet):
 					],
 					or_filters={"show_in_switcher": 1, "name": wiki_space["name"]},
 					order_by="switcher_order asc, space_name asc",
+					limit_page_length=0,
 				),
 				"navbar_items": process_navbar_items(wiki_space_doc.navbar_items)
 				if wiki_space_doc.navbar_items
