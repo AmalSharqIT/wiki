@@ -618,6 +618,84 @@ class TestRenderedPageMetaTags(WikiDocumentTestBase):
 		self.assertNotIn('property="og:image"', html)
 
 
+class TestRenderedPageTranslations(WikiDocumentTestBase):
+	"""
+	The reader chrome strings ("Last updated", "On this page", ...) go through
+	``_()`` so site Translation records apply. The SPA half of the sidebar
+	builds the same strings in JavaScript, so the translated text must be
+	emitted as a JSON literal there and HTML-escaped before it reaches
+	``innerHTML``.
+	"""
+
+	TEST_CLIENT = get_test_client()
+	LANG = "fr"
+
+	def _unique(self, prefix):
+		return f"{prefix}-{frappe.generate_hash(length=6)}"
+
+	def _translate(self, source, translated):
+		doc = frappe.get_doc(
+			{
+				"doctype": "Translation",
+				"language": self.LANG,
+				"source_text": source,
+				"translated_text": translated,
+			}
+		).insert(ignore_permissions=True)
+		# Translation.on_update / on_trash drop the merged cache for the language.
+		self.wiki.track("Translation", doc)
+		return doc
+
+	def _render(self, doc):
+		frappe.db.commit()  # nosemgrep: frappe-semgrep-rules.rules.frappe-manual-commit
+		response = _make_request(
+			self.TEST_CLIENT,
+			"get",
+			f"/{doc.route}",
+			headers={"Accept": "text/html", "Accept-Language": self.LANG},
+		)
+		self.assertEqual(response.status_code, 200)
+		return response.get_data(as_text=True)
+
+	def _public_doc(self, prefix):
+		space = create_test_wiki_space(
+			self, "Translated Space", self._unique(prefix), None, roles=[("Guest", "Read")]
+		)
+		return create_test_wiki_document(
+			self, "Translated Doc", parent=space.root_group, slug=self._unique(f"{prefix}-doc")
+		)
+
+	def test_last_updated_and_toc_label_use_site_translations(self):
+		self._translate("Last updated {0}", "Mis a jour {0}")
+		self._translate("On this page", "Sur cette page")
+		doc = self._public_doc("i18n")
+
+		html = self._render(doc)
+
+		# Server render: the sentence keeps its relative-time argument.
+		self.assertRegex(html, r"Mis a jour \S[^<]*</div>")
+		self.assertNotIn("Last updated", html)
+		# SPA render: the same sentence is a JSON literal with the placeholder intact.
+		self.assertIn("\"Mis a jour {0}\".replace('{0}', data.last_updated)", html)
+		# TOC label in both the Jinja and the JavaScript halves.
+		self.assertIn(">Sur cette page</span>", html)
+		self.assertIn('escapeHtml("Sur cette page")', html)
+		self.assertNotIn("On this page", html)
+
+	def test_translated_toc_label_is_escaped_in_both_halves(self):
+		self._translate("On this page", "<b>Ici</b>")
+		doc = self._public_doc("i18n-esc")
+
+		html = self._render(doc)
+
+		# Frappe's Jinja env does not autoescape, so the Jinja half escapes explicitly ...
+		self.assertIn(">&lt;b&gt;Ici&lt;/b&gt;</span>", html)
+		# ... and the SPA string goes through escapeHtml() before innerHTML, with
+		# tojson keeping the markup out of the inline script.
+		self.assertIn('escapeHtml("\\u003cb\\u003eIci\\u003c/b\\u003e")', html)
+		self.assertNotIn("<b>Ici</b>", html)
+
+
 class TestDisableIndexing(WikiDocumentTestBase):
 	"""GH-806: a page can opt out of search engines."""
 
@@ -1960,6 +2038,25 @@ class TestWikiDocumentPdfDownload(WikiDocumentTestBase):
 		self.assertEqual(frappe.local.response.filecontent, b"%PDF-test%")
 		self.assertEqual(frappe.local.response.filename, "downloadable-page.pdf")
 
+	def test_download_pdf_is_named_after_the_route_not_a_stale_slug(self):
+		root_group = create_test_wiki_document(self, "Root PDF Renamed", is_group=True)
+		page = create_test_wiki_document(
+			self, "Renamed Page", parent=root_group.name, content="Body", slug="old-slug"
+		)
+		create_test_wiki_space(
+			self, "PDF Renamed Space", "pdf-renamed-space", root_group.name, roles=[("Guest", "Read")]
+		)
+		page.db_set("route", "pdf-renamed-space/new-route")
+		frappe.local.response = frappe._dict()
+
+		with patch(
+			"wiki.frappe_wiki.doctype.wiki_document.wiki_document.get_print",
+			return_value=b"%PDF-test%",
+		):
+			download_pdf(route="pdf-renamed-space/new-route")
+
+		self.assertEqual(frappe.local.response.filename, "new-route.pdf")
+
 	def test_download_pdf_blocks_private_page_for_guest(self):
 		# A space with no role rows is open to logged-in users only; an anonymous
 		# Guest is denied and gets a 404 (existence is not leaked).
@@ -1991,6 +2088,15 @@ class TestWikiDocumentPdfDownload(WikiDocumentTestBase):
 		page.before_print()
 
 		self.assertIn("<h2", page.rendered_content_for_pdf)
+
+
+def _site_sitemap_module() -> str:
+	"""The www/sitemap module that would serve /sitemap.xml on this site without the wiki."""
+	from frappe.website.page_renderers.template_page import TemplatePage
+
+	page = TemplatePage("sitemap.xml")
+	page.set_pymodule()
+	return page.pymodule_name
 
 
 def _sitemap_routes(xml: str) -> set:
@@ -2472,6 +2578,63 @@ class TestSpaceLlmsTxt(WikiDocumentTestBase):
 			routes,
 			"groups are not served at their own route",
 		)
+
+	def test_sitemap_keeps_the_site_sitemap_rules(self):
+		"""Site links come from the www/sitemap page that would serve the route, not a
+		rebuild of frappe's list, so an app overriding that page keeps its rules."""
+		tree = self._space_with_tree()
+		site_sitemap = {"links": [{"loc": "https://example.com/kept", "lastmod": None}]}
+
+		with patch(f"{_site_sitemap_module()}.get_context", return_value=site_sitemap):
+			body = _make_request(self.TEST_CLIENT, "get", "/sitemap.xml").get_data(as_text=True)
+
+		ElementTree.fromstring(body)
+		routes = _sitemap_routes(body)
+		self.assertIn("<loc>https://example.com/kept</loc>\n\t</url>", body, "no made-up lastmod")
+		self.assertIn(tree.intro.route, routes)
+		self.assertNotIn("about", routes, "frappe's own www pages come only through that page")
+
+	def test_sitemap_is_rebuilt_when_the_website_cache_is_cleared(self):
+		"""The site's other pages change without a wiki write, but always clear the website cache."""
+		from frappe.website.utils import clear_cache as clear_website_cache
+
+		self._space_with_tree()
+		_make_request(self.TEST_CLIENT, "get", "/sitemap.xml")
+		site_sitemap = {"links": [{"loc": "https://example.com/published-later", "lastmod": "2026-10-05"}]}
+
+		with patch(f"{_site_sitemap_module()}.get_context", return_value=site_sitemap):
+			clear_website_cache("published-later")
+			body = _make_request(self.TEST_CLIENT, "get", "/sitemap.xml").get_data(as_text=True)
+
+		self.assertIn("https://example.com/published-later", body)
+
+	def test_sitemap_takes_site_links_from_the_last_installed_override(self):
+		"""An app installed after frappe that overrides www/sitemap wins, as it would
+		serve /sitemap.xml without the wiki."""
+		import shutil
+		import sys
+		import tempfile
+		from pathlib import Path
+		from types import ModuleType
+
+		from wiki.wiki.sitemap import _framework_links
+
+		app = frappe.get_active_apps()[-1]
+		override_dir = tempfile.mkdtemp()
+		self.addCleanup(shutil.rmtree, override_dir)
+		Path(override_dir, "www").mkdir()
+		for filename in ("sitemap.xml", "sitemap.py"):
+			Path(override_dir, "www", filename).touch()
+
+		override = ModuleType(f"{app}.www.sitemap")
+		override.get_context = lambda context: {"links": [{"loc": "https://example.com/override"}]}
+		get_app_path = frappe.get_app_path
+
+		def app_path(name, *joins):
+			return str(Path(override_dir, *joins)) if name == app else get_app_path(name, *joins)
+
+		with patch.dict(sys.modules, {override.__name__: override}), patch("frappe.get_app_path", app_path):
+			self.assertEqual(_framework_links(), [("https://example.com/override", None)])
 
 
 class TestStale404CacheInvalidation(WikiDocumentTestBase):
