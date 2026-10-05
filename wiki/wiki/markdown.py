@@ -556,44 +556,6 @@ def _build_markdown() -> MarkdownIt:
 
 	md.renderer.rules["image"] = image_render
 
-	def html_block_render(tokens, idx, options, env):
-		# Pictures with no blank line between them arrive as one HTML block.
-		content = tokens[idx].content
-		pictures = []
-		position = 0
-		while position < len(content):
-			match = PICTURE_BLOCK_PATTERN.match(content, position)
-			if not match:
-				return content
-			pictures.append(render_picture(match))
-			position = match.end()
-		return "".join(pictures)
-
-	def render_picture(match):
-		# Same shape as a plain image with a caption, so the caption CSS is shared.
-		alt = _remove_script_tags(match["alt"])
-		title = _remove_script_tags(match["title"])
-		img_attrs = f' title="{title}"' if title else ""
-		if match["width"]:
-			img_attrs += f' width="{match["width"]}"'
-		if match["align"]:
-			img_attrs += f' data-align="{match["align"]}"'
-		source = (
-			f'<source srcset="{match["dark_src"]}" media="(prefers-color-scheme: dark)">'
-			if match["dark_src"] is not None
-			else ""
-		)
-		caption = match["caption"]
-		caption_html = f"\n<em>{md.renderInline(caption)}</em>" if caption else ""
-		# On the <p> too, so the PDF renderer (no :has()) can align image and caption together.
-		paragraph_attrs = f' data-align="{match["align"]}"' if match["align"] else ""
-		return (
-			f'<p{paragraph_attrs}><picture>{source}<img src="{match["src"]}" alt="{alt}"{img_attrs} /></picture>'
-			f"{caption_html}</p>\n"
-		)
-
-	md.renderer.rules["html_block"] = html_block_render
-
 	def softbreak_render(tokens, idx, options, env):
 		# No <br> before a caption, so the `img + em` caption CSS still matches.
 		image_on_own_line = idx == 1 or (idx > 1 and tokens[idx - 2].type in ("softbreak", "hardbreak"))

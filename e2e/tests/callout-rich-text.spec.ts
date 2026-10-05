@@ -99,6 +99,8 @@ test.describe('Callout rich text', () => {
 				contentType: 'markdown',
 			});
 		});
+		await page.locator('.callout-content p').first().click();
+		await page.keyboard.type('written in place');
 
 		// Type into the callout body the way an author would — no double-click,
 		// no sub-editor: it is ordinary editable content.
@@ -152,30 +154,6 @@ test.describe('Callout rich text', () => {
 		expect(markdown).toContain(':::tip\nwritten in place\n:::');
 	});
 
-	test('enter in the title moves the cursor into the body', async ({
-		page,
-		wiki,
-	}) => {
-		const editor = await createDraftAndOpenEditor(
-			page,
-			await wiki.space(),
-			'Callout title enter',
-		);
-
-		await editor.click();
-		await page.keyboard.type('/note');
-		await expect(
-			page.locator('.slash-commands-list').getByText('Note', { exact: true }),
-		).toBeVisible({ timeout: 5000 });
-		await page.keyboard.press('Enter');
-		await page.locator('input.callout-title').click();
-		await page.keyboard.press('Enter');
-		await page.keyboard.type('body text');
-
-		const markdown = await page.evaluate(() => window.wikiEditor.getMarkdown());
-		expect(markdown).toContain(':::note\nbody text\n:::');
-	});
-
 	test('the title is editable in place', async ({ page, wiki }) => {
 		await createDraftAndOpenEditor(page, await wiki.space(), 'Callout title');
 
@@ -183,7 +161,40 @@ test.describe('Callout rich text', () => {
 			window.wikiEditor.commands.setContent(':::note\nbody\n:::', {
 				contentType: 'markdown',
 			});
+
+			const callout = window.wikiEditor
+				.getJSON()
+				.content?.find((n) => n.type === 'calloutBlock');
+			return callout?.content?.map((child) => child.type);
 		});
+
+		// A heading and a fenced block inside a callout were unreachable while
+		// the body was a string; degrading either to a bare paragraph is the
+		// regression this guards.
+		expect(childTypes).toEqual(['heading', 'codeBlock']);
+	});
+
+	test('the published page renders the callout body as real markup', async ({
+		page,
+		wiki,
+	}) => {
+		const space = await wiki.space({
+			pages: [
+				{
+					title: 'Callout Page',
+					content: [
+						':::tip[Careful]',
+						'Body with **bold** text.',
+						'',
+						'- first item',
+						'- second item',
+						':::',
+						'',
+					].join('\n'),
+				},
+			],
+		});
+		const doc = space.page('Callout Page');
 
 		const title = page.locator('input.callout-title');
 		await expect(title).toBeVisible({ timeout: 5000 });

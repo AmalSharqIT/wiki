@@ -1,10 +1,9 @@
 import { Node, mergeAttributes, nodeInputRule } from '@tiptap/core';
 import { VueNodeViewRenderer } from '@tiptap/vue-3';
 import ImageNodeView from './ImageNodeView.vue';
-import {
-	imageCaptionTokenizer,
-	renderImageMarkdown,
-} from './image-markdown.js';
+import { renderImageMarkdown } from './image-markdown.js';
+import { isPdfUrl } from './pdf-block.js';
+import { isVideoUrl } from './video-block.js';
 
 // Markdown image regex: ![alt](src "title")
 // The src allows spaces and one level of balanced parens so Frappe filenames
@@ -126,6 +125,9 @@ export const WikiImage = Node.create({
 		});
 	},
 
+	// Render to markdown using Stack Overflow caption pattern:
+	// ![alt](src "title")
+	// *caption*
 	renderMarkdown: renderImageMarkdown,
 
 	addNodeView() {

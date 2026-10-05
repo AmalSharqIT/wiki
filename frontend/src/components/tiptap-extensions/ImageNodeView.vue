@@ -385,5 +385,80 @@ function handleKeydown(event) {
     margin: 0;
     height: auto;
     cursor: pointer;
+    margin: 0;
+}
+
+.wiki-image.is-loading {
+    filter: brightness(0.7);
+}
+
+.wiki-image-loading-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0.375rem;
+    background: rgba(17, 17, 17, 0.35);
+    color: #fff;
+    font-size: 0.8125rem;
+}
+
+.wiki-image-spinner {
+    width: 1.25rem;
+    height: 1.25rem;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: wiki-image-spin 0.7s linear infinite;
+}
+
+@keyframes wiki-image-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.wiki-image-error {
+    width: 100%;
+    text-align: center;
+    font-size: 0.8125rem;
+    color: var(--ink-red-4, #dc2626);
+    padding: 0.5rem 0;
+}
+
+.wiki-image-caption-input {
+    width: 100%;
+    max-width: 100%;
+    text-align: center;
+    background: transparent;
+    border: none;
+    font-style: italic;
+    font-size: 0.875rem;
+    color: var(--ink-gray-6, #4b5563);
+    padding: 0 0.25rem;
+    margin-top: 0.25rem;
+    outline: none;
+    box-shadow: none;
+}
+
+.wiki-image-caption-input::placeholder {
+    color: var(--ink-gray-4, #9ca3af);
+}
+
+.wiki-image-caption-input:focus {
+    outline: none;
+    box-shadow: none;
+    border: none;
+}
+
+.wiki-image-caption-input:disabled {
+    cursor: default;
+}
+
+.wiki-image-caption-input:disabled:not(.has-caption) {
+    display: none;
 }
 </style>

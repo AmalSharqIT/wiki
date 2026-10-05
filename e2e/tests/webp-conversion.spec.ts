@@ -1,8 +1,9 @@
+import { randomUUID } from 'node:crypto';
+import { deflateSync } from 'node:zlib';
 import type { Page } from '@playwright/test';
 import { expect, test } from '../fixtures';
 import type { SeededSpace } from '../helpers/factory';
 import { deleteDoc, getList, updateDoc } from '../helpers/frappe';
-import { makeUniquePng } from '../helpers/png';
 import { openNewPageDialog } from '../helpers/wiki';
 
 /**

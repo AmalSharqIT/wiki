@@ -296,7 +296,9 @@ async function insertAndUploadImage(file) {
 	const ed = editor.value;
 	if (!ed) return;
 
-	const uploadId = newUploadId();
+	const uploadId = `upload-${Date.now()}-${Math.random()
+		.toString(36)
+		.slice(2, 9)}`;
 	startUpload(uploadId);
 
 	let preview = '';
@@ -319,21 +321,6 @@ async function insertAndUploadImage(file) {
 // The saved content holds an upload only once its node has the file URL.
 // Until then the upload blocks submit and merge, from the moment it starts.
 const editorUploadIds = new Set();
-
-function newUploadId() {
-	return `upload-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-async function uploadImageVariant(file) {
-	const uploadId = newUploadId();
-	startUpload(uploadId);
-	try {
-		return await uploadFile(file);
-	} finally {
-		editorUploadIds.delete(uploadId);
-		draftStore.clearUploads([uploadId]);
-	}
-}
 
 function startUpload(uploadId) {
 	editorUploadIds.add(uploadId);
