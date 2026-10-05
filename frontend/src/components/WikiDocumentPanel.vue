@@ -91,6 +91,7 @@
 										/>
 									</div>
 								</div>
+								<PageMetaLine :key="wikiDoc.doc.name" :doc="wikiDoc.doc" :title="displayTitle" :content="editorContent" />
 							</div>
 						</template>
 					</WikiEditor>
