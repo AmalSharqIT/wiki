@@ -418,9 +418,7 @@ async function insertAndUploadPdf(file) {
 	const ed = editor.value;
 	if (!ed) return;
 
-	const uploadId = `upload-${Date.now()}-${Math.random()
-		.toString(36)
-		.slice(2, 9)}`;
+	const uploadId = newUploadId();
 
 	startUpload(uploadId);
 	ed.chain()
@@ -787,6 +785,7 @@ const editor = useEditor({
 		WikiImage.configure({
 			inline: false,
 			allowBase64: true,
+			uploadImage: uploadImageVariant,
 		}),
 		Table.configure({
 			resizable: true,

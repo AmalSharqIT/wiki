@@ -529,7 +529,7 @@ class WikiDocument(NestedSet):
 			{
 				"wiki_space": wiki_space_doc,
 				"can_edit": self._can_show_edit(wiki_space_doc),
-				"wiki_spaces_for_switcher": frappe.get_all(
+				"wiki_spaces_for_switcher": frappe.get_list(
 					"Wiki Space",
 					fields=[
 						"name",
@@ -545,6 +545,7 @@ class WikiDocument(NestedSet):
 					],
 					or_filters={"show_in_switcher": 1, "name": wiki_space["name"]},
 					order_by="switcher_order asc, space_name asc",
+					limit_page_length=0,
 				),
 				"navbar_items": process_navbar_items(wiki_space_doc.navbar_items)
 				if wiki_space_doc.navbar_items
@@ -1084,7 +1085,8 @@ def download_pdf(route: str):
 	finally:
 		frappe.local.flags.ignore_print_permissions = False
 
-	frappe.local.response.filename = f"{doc.slug or doc.name}.pdf"
+	# Named after the URL the reader downloaded from. The slug can lag behind a route edited since.
+	frappe.local.response.filename = f"{route.rsplit('/', 1)[-1]}.pdf"
 	frappe.local.response.filecontent = pdf_file
 	frappe.local.response.content_type = "application/pdf"
 	frappe.local.response.type = "download"

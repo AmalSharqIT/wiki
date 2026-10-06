@@ -487,6 +487,18 @@ def _render_blank_line(tokens, idx, options, env) -> str:
 	return '<p class="wiki-blank-line" aria-hidden="true"><br></p>\n'
 
 
+# The exact `<picture>` the editor writes for an image with a dark mode file,
+# a width or an alignment, plus its optional `*caption*` line. markdown-it reads
+# it as one raw HTML block, caption included, so the caption would otherwise
+# show as literal asterisks.
+PICTURE_BLOCK_PATTERN = re.compile(
+	r'<picture>\s*(?:<source srcset="(?P<dark_src>[^"]*)" media="\(prefers-color-scheme: dark\)">\s*)?'
+	r'<img src="(?P<src>[^"]*)" alt="(?P<alt>[^"]*)"(?: title="(?P<title>[^"]*)")?'
+	r'(?: width="(?P<width>\d+)")?(?: data-align="(?P<align>left|center|right)")?\s*/?>\s*</picture>'
+	r"(?:\n\*(?P<caption>[^*\n]+)\*)?\s*"
+)
+
+
 def _build_markdown() -> MarkdownIt:
 	"""Build a configured markdown-it-py instance with our render overrides."""
 	md = (

@@ -1960,6 +1960,25 @@ class TestWikiDocumentPdfDownload(WikiDocumentTestBase):
 		self.assertEqual(frappe.local.response.filecontent, b"%PDF-test%")
 		self.assertEqual(frappe.local.response.filename, "downloadable-page.pdf")
 
+	def test_download_pdf_is_named_after_the_route_not_a_stale_slug(self):
+		root_group = create_test_wiki_document(self, "Root PDF Renamed", is_group=True)
+		page = create_test_wiki_document(
+			self, "Renamed Page", parent=root_group.name, content="Body", slug="old-slug"
+		)
+		create_test_wiki_space(
+			self, "PDF Renamed Space", "pdf-renamed-space", root_group.name, roles=[("Guest", "Read")]
+		)
+		page.db_set("route", "pdf-renamed-space/new-route")
+		frappe.local.response = frappe._dict()
+
+		with patch(
+			"wiki.frappe_wiki.doctype.wiki_document.wiki_document.get_print",
+			return_value=b"%PDF-test%",
+		):
+			download_pdf(route="pdf-renamed-space/new-route")
+
+		self.assertEqual(frappe.local.response.filename, "new-route.pdf")
+
 	def test_download_pdf_blocks_private_page_for_guest(self):
 		# A space with no role rows is open to logged-in users only; an anonymous
 		# Guest is denied and gets a 404 (existence is not leaked).
@@ -1991,6 +2010,15 @@ class TestWikiDocumentPdfDownload(WikiDocumentTestBase):
 		page.before_print()
 
 		self.assertIn("<h2", page.rendered_content_for_pdf)
+
+
+def _site_sitemap_module() -> str:
+	"""The www/sitemap module that would serve /sitemap.xml on this site without the wiki."""
+	from frappe.website.page_renderers.template_page import TemplatePage
+
+	page = TemplatePage("sitemap.xml")
+	page.set_pymodule()
+	return page.pymodule_name
 
 
 def _sitemap_routes(xml: str) -> set:
@@ -2472,6 +2500,63 @@ class TestSpaceLlmsTxt(WikiDocumentTestBase):
 			routes,
 			"groups are not served at their own route",
 		)
+
+	def test_sitemap_keeps_the_site_sitemap_rules(self):
+		"""Site links come from the www/sitemap page that would serve the route, not a
+		rebuild of frappe's list, so an app overriding that page keeps its rules."""
+		tree = self._space_with_tree()
+		site_sitemap = {"links": [{"loc": "https://example.com/kept", "lastmod": None}]}
+
+		with patch(f"{_site_sitemap_module()}.get_context", return_value=site_sitemap):
+			body = _make_request(self.TEST_CLIENT, "get", "/sitemap.xml").get_data(as_text=True)
+
+		ElementTree.fromstring(body)
+		routes = _sitemap_routes(body)
+		self.assertIn("<loc>https://example.com/kept</loc>\n\t</url>", body, "no made-up lastmod")
+		self.assertIn(tree.intro.route, routes)
+		self.assertNotIn("about", routes, "frappe's own www pages come only through that page")
+
+	def test_sitemap_is_rebuilt_when_the_website_cache_is_cleared(self):
+		"""The site's other pages change without a wiki write, but always clear the website cache."""
+		from frappe.website.utils import clear_cache as clear_website_cache
+
+		self._space_with_tree()
+		_make_request(self.TEST_CLIENT, "get", "/sitemap.xml")
+		site_sitemap = {"links": [{"loc": "https://example.com/published-later", "lastmod": "2026-10-05"}]}
+
+		with patch(f"{_site_sitemap_module()}.get_context", return_value=site_sitemap):
+			clear_website_cache("published-later")
+			body = _make_request(self.TEST_CLIENT, "get", "/sitemap.xml").get_data(as_text=True)
+
+		self.assertIn("https://example.com/published-later", body)
+
+	def test_sitemap_takes_site_links_from_the_last_installed_override(self):
+		"""An app installed after frappe that overrides www/sitemap wins, as it would
+		serve /sitemap.xml without the wiki."""
+		import shutil
+		import sys
+		import tempfile
+		from pathlib import Path
+		from types import ModuleType
+
+		from wiki.wiki.sitemap import _framework_links
+
+		app = frappe.get_active_apps()[-1]
+		override_dir = tempfile.mkdtemp()
+		self.addCleanup(shutil.rmtree, override_dir)
+		Path(override_dir, "www").mkdir()
+		for filename in ("sitemap.xml", "sitemap.py"):
+			Path(override_dir, "www", filename).touch()
+
+		override = ModuleType(f"{app}.www.sitemap")
+		override.get_context = lambda context: {"links": [{"loc": "https://example.com/override"}]}
+		get_app_path = frappe.get_app_path
+
+		def app_path(name, *joins):
+			return str(Path(override_dir, *joins)) if name == app else get_app_path(name, *joins)
+
+		with patch.dict(sys.modules, {override.__name__: override}), patch("frappe.get_app_path", app_path):
+			self.assertEqual(_framework_links(), [("https://example.com/override", None)])
 
 
 class TestStale404CacheInvalidation(WikiDocumentTestBase):
